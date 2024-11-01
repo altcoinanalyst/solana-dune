@@ -10,7 +10,22 @@ WITH arb_transaction AS (
         WHERE block_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1' MONTH AND CURRENT_DATE
     )
     GROUP BY 1
-), base_chain AS (
+), 
+ bnb_transaction AS (
+    SELECT
+        DATE_TRUNC('day', block_time) AS dt,
+        AVG(transaction_fee) AS bnb_transaction_fees
+    FROM (
+        SELECT
+            *,
+              (CAST(gas_used AS DOUBLE) * CAST(gas_price AS DOUBLE) ) / 10e17 AS  transaction_fee
+        FROM bnb.transactions
+        WHERE block_date BETWEEN DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1' MONTH AND CURRENT_DATE
+    )
+    GROUP BY 1
+),
+
+base_chain AS (
     SELECT
         DATE_TRUNC('day', block_time) AS dt,
         AVG(transaction_fee) AS base_transaction_fees
@@ -70,13 +85,15 @@ WITH arb_transaction AS (
         a.arb_transaction_fees * ep.eth_price AS arb_fee_usd,
         e.eth_transaction_fees * ep.eth_price AS eth_fee_usd,
         s.avg_fee_sol * sp.price AS sol_fee_usd,
-        bc.base_transaction_fees * ep.eth_price AS base_fee_usd
+        bc.base_transaction_fees * ep.eth_price AS base_fee_usd,
+        bnb.bnb_transaction_fees * ep.eth_price AS bnb_fee_usd
     FROM arb_transaction AS a
     JOIN ethereum e ON e.dt = a.dt
     JOIN eth_price AS ep ON ep.dt = a.dt
     JOIN solana AS s ON s.dt = a.dt
     JOIN solprice AS sp ON a.dt = sp.day
     JOIN base_chain AS bc ON a.dt = bc.dt
+    join bnb_transaction as bnb ON a.dt = bnb.dt
 ), pivot_table AS (
     SELECT
         'Arbitrum' AS blockchain, AVG(arb_fee_usd) AS average_fee
@@ -92,6 +109,10 @@ WITH arb_transaction AS (
     UNION ALL
     SELECT
         'Base', AVG(base_fee_usd)
+    FROM basetable
+    UNION ALL
+    SELECT
+        'BNB', AVG(bnb_fee_usd)
     FROM basetable
 )
 SELECT blockchain, average_fee
